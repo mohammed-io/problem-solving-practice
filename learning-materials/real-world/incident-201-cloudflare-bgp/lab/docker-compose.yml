@@ -1,0 +1,110 @@
+# BGP Lab - Simulating BGP Route Leak
+# Demonstrates what happens when a small ISP announces large prefixes
+
+services:
+  # Internet backbone (simulated route server)
+  backbone:
+    image: frrouting/frr:v8.4.2
+    container_name: bgp-backbone
+    networks:
+      bgp_lab:
+        ipv4_address: 10.0.0.1
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    volumes:
+      - ./config/backbone:/etc/frr
+    command: >
+      sh -c "
+      sysctl -w net.ipv4.ip_forward=1 &&
+      /usr/lib/frr/frr init &&
+      /usr/sbin/zebra -d -f /etc/frr/zebra.conf &&
+      /usr/sbin/bgpd -d -f /etc/frr/bgpd.conf &&
+      tail -f /dev/null
+      "
+
+  # Cloudflare (legitimate route announcer)
+  cloudflare:
+    image: frrouting/frr:v8.4.2
+    container_name: bgp-cloudflare
+    networks:
+      bgp_lab:
+        ipv4_address: 10.0.0.2
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    volumes:
+      - ./config/cloudflare:/etc/frr
+    command: >
+      sh -c "
+      sysctl -w net.ipv4.ip_forward=1 &&
+      /usr/lib/frr/frr init &&
+      /usr/sbin/zebra -d -f /etc/frr/zebra.conf &&
+      /usr/sbin/bgpd -d -f /etc/frr/bgpd.conf &&
+      tail -f /dev/null
+      "
+
+  # Small ISP (should only announce specific prefix)
+  small_isp:
+    image: frrouting/frr:v8.4.2
+    container_name: bgp-small-isp
+    networks:
+      bgp_lab:
+        ipv4_address: 10.0.0.3
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    volumes:
+      - ./config/small_isp:/etc/frr
+    command: >
+      sh -c "
+      sysctl -w net.ipv4.ip_forward=1 &&
+      /usr/lib/frr/frr init &&
+      /usr/sbin/zebra -d -f /etc/frr/zebra.conf &&
+      /usr/sbin/bgpd -d -f /etc/frr/bgpd.conf &&
+      tail -f /dev/null
+      "
+
+  # Malicious ISP (announces large prefix - route leak!)
+  malicious_isp:
+    image: frrouting/frr:v8.4.2
+    container_name: bgp-malicious-isp
+    networks:
+      bgp_lab:
+        ipv4_address: 10.0.0.4
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    volumes:
+      - ./config/malicious_isp:/etc/frr
+    command: >
+      sh -c "
+      sysctl -w net.ipv4.ip_forward=1 &&
+      /usr/lib/frr/frr init &&
+      /usr/sbin/zebra -d -f /etc/frr/zebra.conf &&
+      /usr/sbin/bgpd -d -f /etc/frr/bgpd.conf &&
+      tail -f /dev/null
+      "
+
+  # Client for running experiments
+  client:
+    image: python:3.12-slim
+    container_name: bgp-client
+    networks:
+      bgp_lab:
+        ipv4_address: 10.0.0.10
+    volumes:
+      - ./scripts:/workspace
+    depends_on:
+      - backbone
+      - cloudflare
+      - small_isp
+      - malicious_isp
+    command: tail -f /dev/null
+
+networks:
+  bgp_lab:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.0.0.0/24

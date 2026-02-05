@@ -1,0 +1,232 @@
+# CAP Theorem Lab - Docker Compose
+# This lab demonstrates CP vs AP tradeoffs with real databases
+#
+# Systems:
+# - etcd: CP (strongly consistent, unavailable during partition)
+# - Cassandra: AP (available during partition, tunable consistency)
+# - MongoDB: Configurable (write concern determines behavior)
+
+services:
+  # ============================================
+  # CP SYSTEM: etcd (Strong Consistency)
+  # ============================================
+  etcd1:
+    image: quay.io/coreos/etcd:v3.5.9
+    container_name: etcd1
+    environment:
+      - ETCD_NAME=etcd1
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd1:2380
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd1:2379
+      - ETCD_INITIAL_CLUSTER=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_INITIAL_CLUSTER_TOKEN=etcd-cluster
+    ports:
+      - "23791:2379"
+      - "23801:2380"
+    networks:
+      - cap-net
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+
+  etcd2:
+    image: quay.io/coreos/etcd:v3.5.9
+    container_name: etcd2
+    environment:
+      - ETCD_NAME=etcd2
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd2:2380
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd2:2379
+      - ETCD_INITIAL_CLUSTER=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_INITIAL_CLUSTER_TOKEN=etcd-cluster
+    ports:
+      - "23792:2379"
+      - "23802:2380"
+    networks:
+      - cap-net
+    depends_on:
+      - etcd1
+
+  etcd3:
+    image: quay.io/coreos/etcd:v3.5.9
+    container_name: etcd3
+    environment:
+      - ETCD_NAME=etcd3
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd3:2380
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd3:2379
+      - ETCD_INITIAL_CLUSTER=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_INITIAL_CLUSTER_TOKEN=etcd-cluster
+    ports:
+      - "23793:2379"
+      - "23803:2380"
+    networks:
+      - cap-net
+    depends_on:
+      - etcd1
+
+  # ============================================
+  # AP SYSTEM: Cassandra (Eventual Consistency)
+  # ============================================
+  cassandra1:
+    image: cassandra:5
+    container_name: cassandra1
+    environment:
+      - CASSANDRA_CLUSTER_NAME=CAP Lab
+      - CASSANDRA_DC=datacenter1
+      - CASSANDRA_RACK=rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_NUM_TOKENS=256
+    ports:
+      - "9042:9042"  # Native transport
+      - "7199:7199"  # JMX
+    networks:
+      - cap-net
+    healthcheck:
+      test: ["CMD-SHELL", "nodetool status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    volumes:
+      - cassandra1-data:/var/lib/cassandra
+
+  cassandra2:
+    image: cassandra:5
+    container_name: cassandra2
+    environment:
+      - CASSANDRA_CLUSTER_NAME=CAP Lab
+      - CASSANDRA_DC=datacenter1
+      - CASSANDRA_RACK=rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_NUM_TOKENS=256
+      - CASSANDRA_SEEDS=cassandra1
+    ports:
+      - "9043:9042"
+      - "7200:7199"
+    networks:
+      - cap-net
+    depends_on:
+      - cassandra1
+    volumes:
+      - cassandra2-data:/var/lib/cassandra
+
+  cassandra3:
+    image: cassandra:5
+    container_name: cassandra3
+    environment:
+      - CASSANDRA_CLUSTER_NAME=CAP Lab
+      - CASSANDRA_DC=datacenter1
+      - CASSANDRA_RACK=rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_NUM_TOKENS=256
+      - CASSANDRA_SEEDS=cassandra1
+    ports:
+      - "9044:9042"
+      - "7201:7199"
+    networks:
+      - cap-net
+    depends_on:
+      - cassandra1
+    volumes:
+      - cassandra3-data:/var/lib/cassandra
+
+  # ============================================
+  # CONFIGURABLE: MongoDB (Tunable Consistency)
+  # ============================================
+  mongo1:
+    image: mongo:7
+    container_name: mongo1
+    command: mongod --replSet rs0 --bind_ip_all
+    ports:
+      - "27017:27017"
+    networks:
+      - cap-net
+    volumes:
+      - mongo1-data:/data/db
+
+  mongo2:
+    image: mongo:7
+    container_name: mongo2
+    command: mongod --replSet rs0 --bind_ip_all
+    ports:
+      - "27018:27017"
+    networks:
+      - cap-net
+    volumes:
+      - mongo2-data:/data/db
+
+  mongo3:
+    image: mongo:7
+    container_name: mongo3
+    command: mongod --replSet rs0 --bind_ip_all
+    ports:
+      - "27019:27017"
+    networks:
+      - cap-net
+    volumes:
+      - mongo3-data:/data/db
+
+  # MongoDB replica set initialization
+  mongo-init:
+    image: mongo:7
+    container_name: mongo-init
+    depends_on:
+      - mongo1
+      - mongo2
+      - mongo3
+    networks:
+      - cap-net
+    restart: "no"
+    command: >
+      bash -c "
+      sleep 10 &&
+      mongosh --host mongo1 --eval '
+      rs.initiate({
+        _id: \"rs0\",
+        members: [
+          {_id: 0, host: \"mongo1:27017\"},
+          {_id: 1, host: \"mongo2:27017\"},
+          {_id: 2, host: \"mongo3:27017\"}
+        ]
+      })
+      ' &&
+      echo 'Replica set initialized'
+      "
+
+  # ============================================
+  # LAB TOOLS: Client for running experiments
+  # ============================================
+  client:
+    image: python:3.12-slim
+    container_name: cap-client
+    working_dir: /workspace
+    networks:
+      - cap-net
+    volumes:
+      - ./scripts:/workspace
+      - ./results:/workspace/results
+    command: tail -f /dev/null
+    depends_on:
+      - etcd1
+      - cassandra1
+      - mongo1
+
+networks:
+  cap-net:
+    driver: bridge
+
+volumes:
+  cassandra1-data:
+  cassandra2-data:
+  cassandra3-data:
+  mongo1-data:
+  mongo2-data:
+  mongo3-data:

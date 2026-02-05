@@ -1,0 +1,36 @@
+# Cache Stampede Lab - Docker Compose
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: stampede-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --loglevel debug
+
+  # Simulated backend API
+  api:
+    image: python:3.12-slim
+    container_name: stampede-api
+    working_dir: /workspace
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./scripts:/workspace
+    environment:
+      - REDIS_HOST=redis
+      - CACHE_TTL=5
+    depends_on:
+      - redis
+    command: python -m http.server 8000
+
+  # Load generator
+  client:
+    image: python:3.12-slim
+    container_name: stampede-client
+    working_dir: /workspace
+    volumes:
+      - ./scripts:/workspace
+    depends_on:
+      - redis
+    command: tail -f /dev/null

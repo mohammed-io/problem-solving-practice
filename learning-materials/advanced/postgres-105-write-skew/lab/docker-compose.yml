@@ -1,0 +1,33 @@
+# Write Skew Lab - Docker Compose
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: writeskew-postgres
+    environment:
+      POSTGRES_DB: ticketshop
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: secret
+    command: >
+      postgres
+        -c default_transaction_isolation=repeatable_read
+        -c log_min_messages=DEBUG1
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - postgres-data:/var/lib/postgresql/data
+
+  # Tool to simulate concurrent transactions
+  client:
+    image: python:3.12-slim
+    container_name: writeskew-client
+    working_dir: /workspace
+    volumes:
+      - ./scripts:/workspace
+    depends_on:
+      - postgres
+    command: tail -f /dev/null
+
+volumes:
+  postgres-data:
